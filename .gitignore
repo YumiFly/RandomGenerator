@@ -1,2 +1,4 @@
 contracts/artifacts/
+examples/artifacts/
 .deps/
+go.sum

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"net/http"
 
 	"RandomGenerator/events"
@@ -49,11 +50,16 @@ func (v *Version) getVersion(c *gin.Context) {
 }
 
 func main() {
+	var port string
+	// 增加参数设置，使用 -p 设置端口号
+	flag.StringVar(&port, "p", "8888", "port")
+	flag.Parse()
+
 	ver := &Version{Ver: "1.0.0"}
 	server := &Server{}
 
 	r := gin.Default()
 	r.POST("/setContractAddress", server.setContractAddress)
 	r.GET("/version", ver.getVersion)
-	r.Run(":8080")
+	r.Run(":" + port)
 }

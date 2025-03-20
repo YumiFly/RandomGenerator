@@ -177,6 +177,17 @@ type EventListener struct {
 	contractAddress common.Address
 }
 
+type EventData struct {
+	RequestId            *big.Int
+	Requester            common.Address
+	SubId                *big.Int
+	KeyHash              [32]byte
+	CallbackGasLimit     uint32
+	RequestConfirmations uint16
+	NumWords             uint32
+	ExtraArgs            []byte
+}
+
 func NewEventListener(contractAddress string) (*EventListener, error) {
 	client, err := ethclient.Dial(infuraURL)
 	if err != nil {
@@ -210,36 +221,29 @@ func (el *EventListener) Listen() {
 		case err := <-sub.Err():
 			log.Fatalf("Error: %v", err)
 		case vLog := <-logs:
-			event := struct {
-				RequestId            *big.Int
-				Requester            common.Address
-				SubId                *big.Int
-				KeyHash              [32]byte
-				CallbackGasLimit     uint32
-				RequestConfirmations uint16
-				NumWords             uint32
-				ExtraArgs            []byte
-			}{}
-
+			event := EventData{}
 			err := parsedABI.UnpackIntoInterface(&event, "RandomWordsRequested", vLog.Data)
 			if err == nil {
 				// 调用 Process 方法
-				el.Process(event.RequestId)
+				el.Process(&event)
 			}
 		}
 	}
 }
 
-func (el *EventListener) Process(requestId *big.Int) {
-	// 生成 256 位的随机数
-	maxInt := new(big.Int).Lsh(big.NewInt(1), 256)
-	randomNumber, err := rand.Int(rand.Reader, maxInt)
-	if err != nil {
-		log.Fatalf("Failed to generate random number: %v", err)
-	}
+func (el *EventListener) Process(event *EventData) {
+	requestId := event.RequestId
 
 	var rndNumbers []*big.Int
-	rndNumbers = append(rndNumbers, randomNumber)
+	for i := 0; i < int(event.NumWords); i++ {
+		// 生成 256 位的随机数
+		maxInt := new(big.Int).Lsh(big.NewInt(1), 256)
+		randomNumber, err := rand.Int(rand.Reader, maxInt)
+		if err != nil {
+			log.Fatalf("Failed to generate random number: %v", err)
+		}
+		rndNumbers = append(rndNumbers, randomNumber)
+	}
 
 	instance, err := VRFCoordinatorV2.NewVRFCoordinatorV2(el.contractAddress, el.client)
 	if err != nil {
@@ -285,6 +289,7 @@ func (el *EventListener) Process(requestId *big.Int) {
 	if err != nil {
 		log.Fatalf("Failed to call CallFullfillRandomWords: %v", err)
 	}
-
-	fmt.Printf("Successfully called CallFullfillRandomWords with RequestId: %s and RandomNumber: %s\n", requestId.String(), randomNumber.String())
+	for i, it := range rndNumbers {
+		fmt.Printf("Successfully called CallFullfillRandomWords with RequestId: %s and RandomNumber[%d]: %s\n", requestId.String(), i, it.String())
+	}
 }

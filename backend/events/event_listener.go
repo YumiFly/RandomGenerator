@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/big"
 	"strings"
+	"time"
 
 	"RandomGenerator/VRFCoordinatorV2"
 
@@ -200,15 +201,25 @@ func NewEventListener(contractAddress string) (*EventListener, error) {
 	}, nil
 }
 
-func (el *EventListener) Listen() {
+func (el *EventListener) Listen(tmout time.Duration) {
+
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if tmout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), tmout*time.Second) // 设置超时时间
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
+
+	logs := make(chan types.Log)
 	query := ethereum.FilterQuery{
 		Addresses: []common.Address{el.contractAddress},
 	}
 
-	logs := make(chan types.Log)
-	sub, err := el.client.SubscribeFilterLogs(context.Background(), query, logs)
+	sub, err := el.client.SubscribeFilterLogs(ctx, query, logs)
 	if err != nil {
-		log.Fatalf("Failed to subscribe to logs: %v", err)
+		log.Printf("Failed to subscribe to logs: %v", err)
 	}
 
 	parsedABI, err := abi.JSON(strings.NewReader(contractABI))
@@ -216,19 +227,30 @@ func (el *EventListener) Listen() {
 		log.Fatalf("Failed to parse contract ABI: %v", err)
 	}
 
+loop:
 	for {
 		select {
+		case <-ctx.Done():
+			log.Printf("Subscription context done: %v", ctx.Err())
+			sub.Unsubscribe()
+			break loop
 		case err := <-sub.Err():
-			log.Fatalf("Error: %v", err)
+			log.Printf("Subscription error: %v", err)
+			sub.Unsubscribe()
+			break loop
 		case vLog := <-logs:
 			event := EventData{}
 			err := parsedABI.UnpackIntoInterface(&event, "RandomWordsRequested", vLog.Data)
 			if err == nil {
 				// 调用 Process 方法
 				el.Process(&event)
+			} else {
+				log.Printf("Failed to unpack log data: %v", err)
+				break loop
 			}
 		}
 	}
+	log.Printf("Listen goroutine exit")
 }
 
 func (el *EventListener) Process(event *EventData) {

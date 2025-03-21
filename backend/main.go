@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"net/http"
+	"time"
 
 	"RandomGenerator/events"
 
@@ -16,10 +17,11 @@ type Server struct {
 // 测试用例：
 //
 //	curl -X POST http://localhost:8080/setContractAddress -H "Content-Type: application/json" \
-//	     -d '{"address": "0x5FbDB2315678afecb367f032d93F642f64180aa3"}'
+//	     -d '{"address": "0x5FbDB2315678afecb367f032d93F642f64180aa3","timeout":10}'
 func (s *Server) setContractAddress(c *gin.Context) {
 	var json struct {
 		Address string `json:"address" binding:"required"`
+		Timeout int    `json:"timeout"` // 增加超时参数
 	}
 
 	if err := c.ShouldBindJSON(&json); err != nil {
@@ -34,7 +36,14 @@ func (s *Server) setContractAddress(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	go events.Listen()
+
+	tm := json.Timeout
+	if tm == 0 {
+		tm = 5 * 60 // 默认超时时间为5分钟
+	} else if json.Timeout < 0 {
+		tm = 0 // 如果超时时间小于0，则不设置超时
+	}
+	go events.Listen(time.Duration(tm)) // 使用超时参数
 
 	c.JSON(http.StatusOK, gin.H{"status": "contract address set"})
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"log"
 	"math/big"
 	"strings"
@@ -192,7 +191,7 @@ type EventData struct {
 func NewEventListener(contractAddress string) (*EventListener, error) {
 	client, err := ethclient.Dial(infuraURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to the Ethereum client: %v", err)
+		return nil, err
 	}
 
 	return &EventListener{
@@ -202,7 +201,10 @@ func NewEventListener(contractAddress string) (*EventListener, error) {
 }
 
 func (el *EventListener) Listen(tmout time.Duration) {
-
+	log.Printf("Listen goroutine enter")
+	defer func() {
+		log.Printf("Listen goroutine exit")
+	}()
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if tmout > 0 {
@@ -219,7 +221,7 @@ func (el *EventListener) Listen(tmout time.Duration) {
 
 	sub, err := el.client.SubscribeFilterLogs(ctx, query, logs)
 	if err != nil {
-		log.Printf("Failed to subscribe to logs: %v", err)
+		log.Fatalf("Failed to subscribe to logs: %v", err)
 	}
 
 	parsedABI, err := abi.JSON(strings.NewReader(contractABI))
@@ -250,12 +252,14 @@ loop:
 			}
 		}
 	}
-	log.Printf("Listen goroutine exit")
 }
 
 func (el *EventListener) Process(event *EventData) {
+	log.Printf("Processing event: %+v\n", event)
+	defer func() {
+		log.Printf("Processing done.")
+	}()
 	requestId := event.RequestId
-
 	var rndNumbers []*big.Int
 	for i := 0; i < int(event.NumWords); i++ {
 		// 生成 256 位的随机数
@@ -311,7 +315,8 @@ func (el *EventListener) Process(event *EventData) {
 	if err != nil {
 		log.Fatalf("Failed to call CallFullfillRandomWords: %v", err)
 	}
+	log.Printf("Random number generated count: %d\n", len(rndNumbers))
 	for i, it := range rndNumbers {
-		fmt.Printf("Successfully called CallFullfillRandomWords with RequestId: %s and RandomNumber[%d]: %s\n", requestId.String(), i, it.String())
+		log.Printf("Successfully called CallFullfillRandomWords with RequestId: %s and RandomNumber[%d]: %s\n", requestId.String(), i, it.String())
 	}
 }

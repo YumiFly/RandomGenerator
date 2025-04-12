@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"net/http"
 	"time"
 
@@ -28,6 +29,7 @@ func (s *Server) setContractAddress(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("setContractAddress : %v", json)
 
 	s.contractAddress = json.Address
 
@@ -43,6 +45,7 @@ func (s *Server) setContractAddress(c *gin.Context) {
 	} else if json.Timeout < 0 {
 		tm = 0 // 如果超时时间小于0，则不设置超时
 	}
+	log.Printf("setContractAddress timeout: %d", tm)
 	go events.Listen(time.Duration(tm)) // 使用超时参数
 
 	c.JSON(http.StatusOK, gin.H{"status": "contract address set"})
@@ -67,6 +70,7 @@ func main() {
 	ver := &Version{Ver: "1.0.0"}
 	server := &Server{}
 
+	log.Printf("Random Generator backend server started on port %s", port)
 	r := gin.Default()
 	r.POST("/setContractAddress", server.setContractAddress)
 	r.GET("/version", ver.getVersion)

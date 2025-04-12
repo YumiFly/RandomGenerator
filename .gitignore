@@ -3,3 +3,4 @@ examples/artifacts/
 .deps/
 .states/
 go.sum
+backend/__debug_*

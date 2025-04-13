@@ -33,7 +33,7 @@ func (s *Server) setContractAddress(c *gin.Context) {
 
 	s.contractAddress = json.Address
 
-	events, err := events.NewEventListener(s.contractAddress)
+	event, err := events.NewEventListener(s.contractAddress)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -41,12 +41,12 @@ func (s *Server) setContractAddress(c *gin.Context) {
 
 	tm := json.Timeout
 	if tm == 0 {
-		tm = 5 * 60 // 默认超时时间为5分钟
+		tm = 1 * 60 // 默认超时时间为5分钟
 	} else if json.Timeout < 0 {
 		tm = 0 // 如果超时时间小于0，则不设置超时
 	}
 	log.Printf("setContractAddress timeout: %d", tm)
-	go events.Listen(time.Duration(tm)) // 使用超时参数
+	go event.Listen(time.Duration(tm)) // 使用超时参数
 
 	c.JSON(http.StatusOK, gin.H{"status": "contract address set"})
 }
@@ -56,7 +56,7 @@ type Version struct {
 }
 
 // 测试用例：
-// curl -X GET http://localhost:8080/version
+// curl -X GET http://localhost:58008/version
 func (v *Version) getVersion(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"version": v.Ver})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
 	"strings"
@@ -205,15 +206,34 @@ func (el *EventListener) Listen(tmout time.Duration) {
 	defer func() {
 		log.Printf("Listen goroutine exit")
 	}()
-	var ctx context.Context
-	var cancel context.CancelFunc
-	if tmout > 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), tmout*time.Second) // 设置超时时间
-		defer cancel()
-	} else {
-		ctx = context.Background()
-	}
 
+	// 创建一个可取消的上下文
+	ctx, cancel := context.WithCancel(context.Background())
+	if tmout > 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), tmout*time.Second)
+	}
+	defer cancel()
+
+	// 实现重连机制
+	for {
+		if err := el.subscribe(ctx); err != nil {
+			if ctx.Err() != nil {
+				// 上下文已取消，退出循环
+				log.Printf("Context cancelled, exiting...")
+				return
+			}
+			log.Printf("Subscription error: %v, reconnecting in 5 seconds...", err)
+			//time.Sleep(5 * time.Second)
+			continue
+		}
+
+		// 如果subscribe正常返回（而不是出错），说明监听已完成
+		log.Printf("Subscription completed successfully, exiting...")
+		break
+	}
+}
+
+func (el *EventListener) subscribe(ctx context.Context) error {
 	logs := make(chan types.Log)
 	query := ethereum.FilterQuery{
 		Addresses: []common.Address{el.contractAddress},
@@ -221,34 +241,42 @@ func (el *EventListener) Listen(tmout time.Duration) {
 
 	sub, err := el.client.SubscribeFilterLogs(ctx, query, logs)
 	if err != nil {
-		log.Fatalf("Failed to subscribe to logs: %v", err)
+		log.Fatalf("failed to subscribe to logs: %v", err)
+		return err
 	}
+	defer sub.Unsubscribe()
 
 	parsedABI, err := abi.JSON(strings.NewReader(contractABI))
 	if err != nil {
-		log.Fatalf("Failed to parse contract ABI: %v", err)
+		log.Fatalf("failed to parse contract ABI: %v", err)
+		return err
 	}
 
-loop:
+	// 添加一个额外的超时检测
+	watchdog := time.NewTicker(1 * time.Minute)
+	defer watchdog.Stop()
+
+	lastEventTime := time.Now()
+
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Subscription context done: %v", ctx.Err())
-			sub.Unsubscribe()
-			break loop
+			return ctx.Err()
 		case err := <-sub.Err():
-			log.Printf("Subscription error: %v", err)
-			sub.Unsubscribe()
-			break loop
+			return fmt.Errorf("subscription error: %v", err)
 		case vLog := <-logs:
+			lastEventTime = time.Now() // 更新最后一次收到事件的时间
 			event := EventData{}
 			err := parsedABI.UnpackIntoInterface(&event, "RandomWordsRequested", vLog.Data)
 			if err == nil {
-				// 调用 Process 方法
 				el.Process(&event)
 			} else {
 				log.Printf("Failed to unpack log data: %v", err)
-				break loop
+			}
+		case <-watchdog.C:
+			// 如果超过4分钟没有收到事件，主动重连
+			if time.Since(lastEventTime) >= 4*time.Minute {
+				return fmt.Errorf("connection seems idle for too long, forcing reconnect")
 			}
 		}
 	}
